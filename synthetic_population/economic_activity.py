@@ -12,7 +12,7 @@ def generate_inactive_people(df):
 
 
 def process_OA_area(OA_area, df_economic_activity, df_composition, gender,
-                    age_range, inactive_conversor):
+                    age_range, inactive_conversor, df_potential_inactive):
     # Select the row of the df_economic_activity that is related to the selected
     # OA area:
     df_economic_activity_area = df_economic_activity.loc[
@@ -94,7 +94,6 @@ def process_OA_area(OA_area, df_economic_activity, df_composition, gender,
 
     # Dataframe containing people of the selected OA area, sex, range of age and
     # nssec null.
-    # TODO: What are these dataframes?
     df_potential_inactive_NSCCnull = df_potential_inactive.loc[
         (df_potential_inactive['Area_OA_x'] == OA_area)
         & (df_potential_inactive['Sex'] == gender)
@@ -168,14 +167,12 @@ def process_OA_area(OA_area, df_economic_activity, df_composition, gender,
 
 def inactive_iterator(iteration_counter, total_inactive_percentage,
                       AreaOA_list, df_economic_activity, df_composition, gender,
-                      age_range, persons_inactive):
+                      age_range, persons_inactive, df_potential_inactive,
+                      inactive_rate, inactive_conversor):
+
     # let's start assigning economic activities to the persons in the
     # synthetic population based on the OA level, age and sex
-    # TODO: I don't understand this code - where is 'globals()[f"inactiv
-    #  e_rate_{gender}_{age_range[0]}_{age_range[1]}_2019"]' [changed to
-    #  'inactive_rate_2019'] assigned anywhere else, either in this
-    #  script or another? How is it able to do math operations?
-    while abs(inactive_rate_2019 - total_inactive_percentage) > 1:
+    while abs(inactive_rate - total_inactive_percentage) > 1:
         iteration_counter += 1
 
         print("It: ", iteration_counter, 'CONVERSOR Value: ',
@@ -190,7 +187,7 @@ def inactive_iterator(iteration_counter, total_inactive_percentage,
         for count, OA_area in enumerate(AreaOA_list, 1):
             df_inactive_all_each_area = process_OA_area(
                 OA_area, df_economic_activity, df_composition, gender,
-                age_range, inactive_conversor)
+                age_range, inactive_conversor, df_potential_inactive)
 
             # Append the dataframe into the dict
             dict_key = f"df_{gender}_{age_range[0]}_{age_range[1]}_inactive_all_each_area"
@@ -219,12 +216,13 @@ def inactive_iterator(iteration_counter, total_inactive_percentage,
         # labour market statistics:HI01 Headline indicators for the
         # North East related to year 2019. If differences obtained
         # against data given is within 1%, then it is Ok
-        if (((inactive_rate_2019 - 1) <= total_inactive_percentage)
-                & ((inactive_rate_2019 + 1) >= total_inactive_percentage)):
+        if (((inactive_rate - 1) <= total_inactive_percentage)
+                & ((inactive_rate + 1) >= total_inactive_percentage)):
             print('The value is within the tolerance of 1%')
             print('Value obtained: ', total_inactive_percentage)
             print('Continuing with the other gender or age range')
-            break
+            # TODO: Is this the correct df to return?
+            return df_inactive_all
 
         # If the difference is greater than a 1% (+/-) then a new
         # iteration should be done updating the parameter that transform
@@ -234,7 +232,7 @@ def inactive_iterator(iteration_counter, total_inactive_percentage,
             print('Value obtained: ', total_inactive_percentage)
             # If the difference is negative, then a POSITIVE increment
             # has to be added
-            if (total_inactive_percentage - inactive_rate_2019 - 1) < 0:
+            if (total_inactive_percentage - inactive_rate - 1) < 0:
                 # Update the value transform data from 2011 to 2019
                 # (increase the value):
                 inactive_conversor += 0.025
@@ -249,33 +247,77 @@ def inactive_iterator(iteration_counter, total_inactive_percentage,
             continue
 
 
+def inactive_analysis(df_inactive, df_composition, age_range, gender, gender_val):
+    # Number of inactive people grouped by sex and age range:
+    total_inactive = len(df_inactive.loc[(df_inactive['Age'] >= age_range[0])
+                                         & (df_inactive['Age'] <= age_range[1])
+                                         & (df_inactive['Sex'] == gender_val)])
+
+    # Total number of people in the population grouped by sex and age range
+    total_population = len(df_composition.loc[(df_composition['Age'] >= age_range[0])
+                                              & (df_composition['Age'] <= age_range[1])
+                                              & (df_composition['Sex'] == gender_val)])
+
+    # Percentage of people inactive grouped by sex and age range:
+    print(f"Percentage of inactive {gender}s between the ages of {age_range[0]}" \
+          f" and {age_range[1]}: {(total_inactive / total_population) * 100}")
+
+
 def inactive_processing(df_composition, df_economic_activity, genders,
                         age_range_list, AreaOA_list):
 
-    df_composition = generate_inactive_people(df_composition)
+    df_potential_inactive = generate_inactive_people(df_composition)
     iteration_counter = 0
+    inactive_list = []
 
-    # TODO: Inactive rates (9:39-76) not called so have not been included
+    # TODO: Make the following input parameters
+    # Inactive rates and conversors per gender per age range
+    inactive_rates = {
+        "male": [38.3, 10.0, 9.1, 26.8, 90.3],
+        "female": [44.5, 23.1, 19.3, 31.6, 94.8]
+    }
+    inactive_conversors = {
+        "male": [1.103, 1.234, 0.907, 0.849, 0.971],
+        "female": [1.123, 0.987, 0.885, 0.716, 0.983]
+    }
 
     for gender in genders:
-        for age_range in age_range_list:
+        for i, age_range in enumerate(age_range_list):
             print('Processing: ', gender, str(age_range[0]), str(age_range[1]))
+
+            inactive_rate = inactive_rates[gender][i]
+            inactive_conversor = inactive_conversors[gender][i]
 
             # TODO: Instead of using 'persons_inactive_list.clear()' I've
             #  included persons_inactive list here to reset with each new
             #  iteration. Does this break anything globally? Also changed to
             #  dict.
             persons_inactive = {}
-
             total_inactive_percentage = 0
 
             # TODO: What does this need to return? Iteration counter at least
-            inactive_iterator(iteration_counter, 0,
-                      AreaOA_list, df_economic_activity, df_composition, gender,
-                      age_range, persons_inactive)
+            inactive_list.append(
+                inactive_iterator(
+                    iteration_counter, total_inactive_percentage, AreaOA_list,
+                    df_economic_activity, df_composition, gender, age_range,
+                    persons_inactive, df_potential_inactive, inactive_rate,
+                    inactive_conversor
+                )
+            )
 
-    # TODO: How should results be checked?
-    print('Inactive processing complete. Check the results.')
+    df_inactive = pd.concat(inactive_list)
+
+    analysis_age_ranges = age_range_list.append((16, 120), (16, 64))
+
+    for gender in genders:
+        for age_range in analysis_age_ranges:
+            inactive_analysis(df_inactive, age_range, gender, genders[gender])
+
+    # TODO: Future feature - include some sort of visualisation outputs?
+
+    print('Inactive processing and analysis complete. Please check results')
+
+
 
 
 def main(composition_path=os.getenv("composition_path"),
