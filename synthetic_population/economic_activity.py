@@ -4,13 +4,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def generate_inactive_people(df):
-    # Concatenate a new dataframe containing only those people which NSSEC value
-    # is null or equal to 9 (students)
-    return pd.concat([df.loc[(df['NSSEC'].isnull())],
-                      df.loc[(df['NSSEC'] == 9)]])
-
-
 def sample_dataframe(df, value):
     df_len = len(df.index)
     if df_len == 0:
@@ -216,178 +209,42 @@ def process_OA_area(OA_area, df_economic_activity, df_composition, gender,
         return pd.concat([df_employed, df_employed_leftovers])
 
 
+def converge(rate, conversor, AreaOA_list, df_economic_activity, df_composition,
+             gender, age_range, df_potential, activity_status,
+             df_NO_inactive=None):
 
-def inactive_processing(iteration_counter, total_inactive_percentage,
-                        AreaOA_list, df_economic_activity, df_composition,
-                        gender, age_range, persons_inactive,
-                        df_potential_inactive, inactive_rate, inactive_conversor
-                        ):
-
-    # let's start assigning economic activities to the persons in the synthetic
-    # population based on the OA level, age and sex
-    while abs(inactive_rate - total_inactive_percentage) > 1:
-        iteration_counter += 1
-
-        print("Iteration: ", iteration_counter, 'CONVERSOR Value: ',
-              inactive_conversor)
-
-        # Assign / Clear the dataframe everytime there is a need for a new
-        # iteration.
-        # TODO: Remove? These don't look to be used elsewhere - or are they
-        #  related to global variables?
-        df_gender_inactive = pd.DataFrame()
-        df_inactive_students = pd.DataFrame()
-        df_inactive_last = pd.DataFrame()
-
-        for count, OA_area in enumerate(AreaOA_list, 1):
-            df_inactive_all_each_area = process_OA_area(
-                OA_area, df_economic_activity, df_composition, gender,
-                age_range, inactive_conversor, df_potential_inactive, "Inactive")
-
-            # Append the dataframe into the dict
-            dict_key = f"df_{gender}_{age_range[0]}_{age_range[1]}_inactive_all_each_area"
-            persons_inactive[dict_key] = df_inactive_all_each_area
-
-        # Concatenate all persons "inactive" in one dataframe
-        df_inactive_all = pd.concat(
-            persons_inactive.values(), axis=0, ignore_index=True)
-        print('Number of people selected INACTIVE by age range and gender: ')
-        print(len(df_inactive_all.index))
-
-        # Calculate the TOTAL number of people with the same sex and range of
-        # age:
-        # TODO: May need to be genders[gender] here
-        total = len(df_composition.loc[
-                        (df_composition['Sex'] == gender)
-                        & (df_composition['Age'] >= age_range[0])
-                        & (df_composition['Age'] <= age_range[1])
-                        ])
-        print('Total number of people age range and gender: ', total)
-
-        # Calculate the % of people inactive with the same sex and range of age:
-        total_inactive_percentage = len(df_inactive_all) / total * 100
-
-        # Compare the results against the ones given in table Regional labour
-        # market statistics:HI01 Headline indicators for the North East related
-        # to year 2019. If differences obtained against data given is within 1%,
-        # then it is Ok
-        if (((inactive_rate - 1) <= total_inactive_percentage)
-                & ((inactive_rate + 1) >= total_inactive_percentage)):
-            print('The value is within the tolerance of 1%')
-            print('Value obtained: ', total_inactive_percentage)
-            print('Continuing with the other gender or age range')
-            # TODO: Is this the correct df to return?
-            return df_inactive_all
-
-        # If the difference is greater than a 1% (+/-) then a new
-        # iteration should be done updating the parameter that transform
-        # the employment rate from 2011 to 2019
-        else:
-            print('The % needs to be adjusted in another iteration')
-            print('Value obtained: ', total_inactive_percentage)
-            # If the difference is negative, then a POSITIVE increment has to be
-            # added
-            if (total_inactive_percentage - inactive_rate - 1) < 0:
-                # Update the value transform data from 2011 to 2019 (increase
-                # the value):
-                inactive_conversor += 0.025
-            # If the difference is positive, then a NEGATIVE increment has to be
-            # added
-            else:
-                # Update the value transform data from 2011 to 2019 (reduce the
-                # value):
-                inactive_conversor -= 0.025
-
-            print('NEW CONVERSOR Value is: ', inactive_conversor)
-            continue
-
-
-def economically_inactive(df_composition, df_economic_activity, genders,
-                          age_range_list, AreaOA_list):
-
-    df_potential_inactive = generate_inactive_people(df_composition)
     iteration_counter = 0
-    inactive_list = []
+    total_percentage = 0
+    persons_dict = {}
 
-    # TODO: Make the following input parameters
-    # Inactive rates and conversors per gender per age range
-    inactive_rates = {
-        "male": [38.3, 10.0, 9.1, 26.8, 90.3],
-        "female": [44.5, 23.1, 19.3, 31.6, 94.8]
-    }
-    inactive_conversors = {
-        "male": [1.103, 1.234, 0.907, 0.849, 0.971],
-        "female": [1.123, 0.987, 0.885, 0.716, 0.983]
-    }
-
-    for gender in genders:
-        for i, age_range in enumerate(age_range_list):
-            print('Processing: ', gender, str(age_range[0]), str(age_range[1]))
-
-            inactive_rate = inactive_rates[gender][i]
-            inactive_conversor = inactive_conversors[gender][i]
-
-            # TODO: Instead of using 'persons_inactive_list.clear()' I've
-            #  included persons_inactive list here to reset with each new
-            #  iteration. Does this break anything globally? Also changed to
-            #  dict.
-            persons_inactive = {}
-            total_inactive_percentage = 0
-
-            inactive_list.append(
-                inactive_processing(
-                    iteration_counter, total_inactive_percentage, AreaOA_list,
-                    df_economic_activity, df_composition, gender, age_range,
-                    persons_inactive, df_potential_inactive, inactive_rate,
-                    inactive_conversor
-                )
-            )
-
-    df_inactive = pd.concat(inactive_list)
-
-    analysis_age_ranges = age_range_list.append((16, 120), (16, 64))
-
-    for gender in genders:
-        for age_range in analysis_age_ranges:
-            analysis(df_inactive, df_composition, age_range, gender,
-                     genders[gender], "Inactive")
-
-    # TODO: Future feature - include some sort of visualisation outputs?
-    print('Inactive processing and analysis complete. Please check results')
-    return df_inactive
-
-
-def employed_processing(rate, conversor, total_percentage, AreaOA_list,
-                        df_NO_inactive, df_economic_activity, df_composition,
-                        gender, age_range, df_potential, persons_dict):
-    # TODO: Set this inside function - do the same for inactive
-    iteration_counter = 0
-
-    # TODO: Range of +/-1% used here although comments suggest +-2% ?
+    # TODO: Range of +/-1% used here although comments for employed suggest +-2% ?
     while abs(rate - total_percentage) > 1:
         iteration_counter += 1
         print("Iteration: ", iteration_counter, 'CONVERSOR Value: ', conversor)
 
-        # TODO: Also set this back to a list and put inside of function because it
-        #  gets cleared with every iteration - change for inactive
+        # TODO: where is persons_list used?
         persons_list = []
 
-        # TODO: Different dataframes are cleared for inactive, although these
-        #  all may be rendundant anyway
-        df_selected = pd.DataFrame()
+        # TODO: Where are these dataframes used to begin?
+        if activity_status == "Employed":
+            df_selected = pd.DataFrame()
+        elif activity_status == "Inactive":
+            df_gender_inactive = pd.DataFrame()
+            df_inactive_students = pd.DataFrame()
+            df_inactive_last = pd.DataFrame()
 
         for count, OA_area in enumerate(AreaOA_list, 1):
             df_all_each_area = process_OA_area(
                 OA_area, df_economic_activity, df_composition, gender,
                 age_range, conversor, df_potential, "Employed", df_NO_inactive)
 
-            # Append the dataframe into the dict
-            # TODO: Make sure persons_dicts clear between inactive and employment
             dict_key = f"df_{gender}_{age_range[0]}_{age_range[1]}"
             persons_dict[dict_key] = df_all_each_area
 
-        # Concatenate all persons "inactive" in one dataframe
+        # Concatenate all persons in one dataframe
         df_all = pd.concat(persons_dict.values(), axis=0, ignore_index=True)
+        print(f"Number of people selected {activity_status} by age range and "
+              f"gender: {len(df_all.index)}")
 
         # Calculate the TOTAL number of people with the same sex and range of
         # age:
@@ -412,21 +269,18 @@ def employed_processing(rate, conversor, total_percentage, AreaOA_list,
             print('The value is within the tolerance of 1%')
             print('Value obtained: ', total_percentage)
             print('Continuing with the other gender or age range')
-            # TODO: Is this the correct df to return?
             return df_all
 
-        # If the difference is greater than a 1% (+/-) then a new
-        # iteration should be done updating the parameter that transform
-        # the employment rate from 2011 to 2019
+        # If the difference is greater than a 1% (+/-) then a new iteration
+        # should be done updating the parameter that transform the employment
+        # rate from 2011 to 2019. If the difference is negative, then a POSITIVE
+        # increment has to be added. If the difference is positive, then a
+        # NEGATIVE increment has to be added.
         else:
             print('The % needs to be adjusted in another iteration')
             print('Value obtained: ', total_percentage)
-            # If the difference is negative, then a POSITIVE increment has to be
-            # added
             if (total_percentage - rate - 1) < 0:
                 conversor += 0.025
-            # If the difference is positive, then a NEGATIVE increment has to be
-            # added
             else:
                 conversor -= 0.025
 
@@ -434,53 +288,37 @@ def employed_processing(rate, conversor, total_percentage, AreaOA_list,
             continue
 
 
-def economically_employed(df_NO_inactive, genders, age_range_list, AreaOA_list,
-                          df_economic_activity, df_composition):
-    # Select all people other than those who have never worked or have been
-    # in long-term unemployment
-    df_potenital = df_NO_inactive.loc[(df_NO_inactive["NSSEC"] != 8)]
+def process_activity_status(genders, age_range_list, AreaOA_list,
+                            df_economic_activity, df_composition,
+                            activity_status, rates, conversors,
+                            df_NO_inactive=None):
+
+    if activity_status == "Employed":
+        df_potenital = df_NO_inactive.loc[(df_NO_inactive["NSSEC"] != 8)]
+    elif activity_status == "Inactive":
+        df_potential = pd.concat([
+            df_composition.loc[(df_composition['NSSEC'].isnull())],
+            df_composition.loc[(df_composition['NSSEC'] == 9)]])
 
     dfs = []
 
-    # TODO: Make the following input parameters
-    rates = {
-        "male": [51.9,84.2,87.8,68.8,9.6],
-        "female": [48.6,73.1,77.9,66.2,5.1]
-    }
-    conversors = {
-        "male": [1.114, 1.084, 1.108, 1.052, 1.272],
-        "female": [1.025, 1.070, 1.041, 1.236, 0.900]
-    }
-
     for gender in genders:
         for i, age_range in enumerate(age_range_list):
+            print(f"Processing — Activity status: {activity_status}, Gender: "
+                  f"{gender}, Age range: {age_range[0]}-{age_range[1]}")
+
             rate = rates[gender][i]
             conversor = conversors[gender][i]
-            total_percentage = 0
-            # TODO: As for inactive function, not sure about persons here
-            persons_dict = {}
 
             dfs.append(
-                employed_processing(
-                    rate, conversor, total_percentage, AreaOA_list,
-                    df_NO_inactive, df_economic_activity, df_composition,
-                    gender, age_range, df_potenital, persons_dict
+                converge(
+                    rate, conversor, AreaOA_list, df_economic_activity,
+                    df_composition, gender, age_range, df_potenital,
+                    activity_status, df_NO_inactive
                 )
             )
 
-    df = pd.concat(dfs)
-
-    # TODO: Moved outside of function, pass in
-    analysis_age_ranges = age_range_list.append((16, 120), (16, 64))
-
-    for gender in genders:
-        for age_range in analysis_age_ranges:
-            analysis(df, df_composition, age_range, gender, genders[gender],
-                     "Employed")
-
-    # TODO: Future feature - include some sort of visualisation outputs?
-    print('Employed processing and analysis complete. Please check results')
-    return df
+    return pd.concat(dfs)
 
 
 def analysis(df1, df2, age_range, gender, gender_val, activity_status):
@@ -525,14 +363,34 @@ def main(composition_path=os.getenv("composition_path"),
     # This values come from Regional labour market statistics: HI01 Headline indicators for the North East
     # link: https://www.ons.gov.uk/employmentandlabourmarket/peopleinwork/employmentandemployeetypes/datasets/headlinelabourforcesurveyindicatorsforthenortheasthi01
     age_range_list = [(16, 24), (25, 34), (35, 49), (50, 64), (65, 120)]
-    analysis_age_ranges = age_range_list.append((16, 120), (16, 64))
+    analysis_age_ranges = age_range_list.append([(16, 120), (16, 64)])
+
+    # TODO: Make the following input parameters
+    inactive_rates = {
+        "male": [38.3, 10.0, 9.1, 26.8, 90.3],
+        "female": [44.5, 23.1, 19.3, 31.6, 94.8]
+    }
+    inactive_conversors = {
+        "male": [1.103, 1.234, 0.907, 0.849, 0.971],
+        "female": [1.123, 0.987, 0.885, 0.716, 0.983]
+    }
+    employed_rates = {
+        "male": [51.9, 84.2, 87.8, 68.8, 9.6],
+        "female": [48.6, 73.1, 77.9, 66.2, 5.1]
+    }
+    employed_conversors = {
+        "male": [1.114, 1.084, 1.108, 1.052, 1.272],
+        "female": [1.025, 1.070, 1.041, 1.236, 0.900]
+    }
 
     ## LIST OF OA_AREAS that has been generated before
     # Create a list with all Households unique ID values
     AreaOA_list = list(set(df_households['Area_OA'].tolist()))
 
-    df_inactive = economically_inactive(df_composition, df_economic_activity,
-                                        genders, age_range_list, AreaOA_list)
+    df_inactive = process_activity_status(
+        genders, age_range_list, AreaOA_list, df_economic_activity,
+        df_composition, "Inactive", inactive_rates, inactive_conversors
+    )
 
     # concatenate all persons "EMPLOYED" in one dataframe
     df_composition = pd.concat([df_composition, df_inactive])
@@ -541,9 +399,11 @@ def main(composition_path=os.getenv("composition_path"),
     # licence
     df_NO_inactive = df_composition.drop_duplicates(keep=False)
 
-    df_employed = economically_employed(df_NO_inactive, genders, age_range_list,
-                                        AreaOA_list, df_economic_activity,
-                                        df_composition)
+    df_employed = process_activity_status(
+        genders, age_range_list, AreaOA_list, df_economic_activity,
+        df_composition, "Employed", employed_rates, employed_conversors,
+        df_NO_inactive
+    )
 
     # Remove the previous selected people and keep the remaining ones
     df_unemployed = pd.concat([df_NO_inactive, df_employed])
@@ -553,9 +413,13 @@ def main(composition_path=os.getenv("composition_path"),
     df_unemployed = df_unemployed.drop_duplicates(subset='PID_AreaMSOA',
                                                   keep=False)
 
-    # Unemployment analysis
+    # Analysis
     for gender in genders:
         for age_range in analysis_age_ranges:
+            analysis(df_inactive, df_composition, age_range, gender,
+                     genders[gender], "Inactive")
+            analysis(df_employed, df_composition, age_range, gender,
+                     genders[gender], "Employed")
             analysis(df_unemployed, df_employed, age_range, gender,
                      gender[genders], "Unemployed")
 
