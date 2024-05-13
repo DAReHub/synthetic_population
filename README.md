@@ -1,4 +1,4 @@
-# synthetic_population_dev
+# synthetic_population
 
 
 This repository contains the following jupyter notebooks:
