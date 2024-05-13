@@ -12,7 +12,7 @@ def sample_dataframe(df, value):
     return df.sample(min(value, df_len))
 
 
-def process_OA_area(OA_area, df_economic_activity, df_composition, gender,
+def process_OA_area(OA_area, df_economic_activity, df_composition, gender_val,
                     age_range, conversor, df_potential, activity_status,
                     df_NO_inactive=None):
     # Select the row of the df_economic_activity that is related to the selected
@@ -28,9 +28,8 @@ def process_OA_area(OA_area, df_economic_activity, df_composition, gender,
     # age range. The INACTIVE people will be chosen from this dataset. The
     # number of them will depend on the value of variable "globals()[f"inactive_
     # {gender}_{age_range[0]}_{age_range[1]}_2019"]"
-    # TODO: I think this needs to be genders[gender]
     df = df_people_OA_area.loc[
-        (df_people_OA_area['Sex'] == gender)
+        (df_people_OA_area['Sex'] == gender_val)
         & (df_people_OA_area['Age'] >= age_range[0])
         & (df_people_OA_area['Age'] <= age_range[1])
     ]
@@ -41,12 +40,12 @@ def process_OA_area(OA_area, df_economic_activity, df_composition, gender,
 
     # Create a variable per type of economic activity based on sex and range of
     # age
-    filter_cols = gender + "_" + str(age_range[0]) + "_" + str(age_range[1])
+    filter_cols = str(gender_val) + "_" + str(age_range[0]) + "_" + str(age_range[1])
 
     # Identify the number of people based on sex and range of age in the
     # selected OA area that are employed
     # Value from 2011!!
-    # TODO: Value comming table LC6107EW that has to be updated to 2019
+    # TODO: Value coming table LC6107EW that has to be updated to 2019
     employment_status = ["Employed", "Unemployed", "Inactive"]
     employment_dict = {}
     for status in employment_status:
@@ -74,7 +73,6 @@ def process_OA_area(OA_area, df_economic_activity, df_composition, gender,
     # conversor value (based on age range and sex)) * (ratio of people 2019 vs
     # 2011 (c)). This value is the number of people that will be randomly
     # assigned "inactive" based on their OA area, range of age and sex.
-    # TODO: Make activity_status a state with class
     value_2019 = int(round(employment_dict[activity_status] * conversor
                               * ratio_people_2019_2011, 0))
 
@@ -96,7 +94,7 @@ def process_OA_area(OA_area, df_economic_activity, df_composition, gender,
         # nssec null.
         df_potential_inactive_NSCCnull = df_potential.loc[
             (df_potential['Area_OA_x'] == OA_area)
-            & (df_potential['Sex'] == gender)
+            & (df_potential['Sex'] == gender_val)
             & (df_potential['Age'] >= age_range[0])
             & (df_potential['Age'] <= age_range[1])
             & (df_potential['NSSEC'].isnull())]
@@ -105,7 +103,7 @@ def process_OA_area(OA_area, df_economic_activity, df_composition, gender,
         # nssec 9 (student)
         df_potential_inactive_NSCC9 = df_potential.loc[
             (df_potential['Area_OA_x'] == OA_area)
-            & (df_potential['Sex'] == gender)
+            & (df_potential['Sex'] == gender_val)
             & (df_potential['Age'] >= age_range[0])
             & (df_potential['Age'] <= age_range[1])
             & (df_potential['NSSEC'] == 9)]
@@ -157,11 +155,11 @@ def process_OA_area(OA_area, df_economic_activity, df_composition, gender,
         # Concatenate and return all persons "inactive" in one dataframe
         return pd.concat([df_inactive_students, df_inactive, df_inactive_last])
 
-    if activity_status == "Employed":
+    elif activity_status == "Employed":
         # Select those people of the selected sex, age range and OA area that
         # can be selected:
         df_potential_employed = df_potential.loc[
-            (df_potential['Sex'] == gender)
+            (df_potential['Sex'] == gender_val)
             & (df_potential['Age'] >= age_range[0])
             & (df_potential['Age'] <= age_range[1])
             & ((df_potential['Area_OA_x'] == OA_area))]
@@ -189,7 +187,7 @@ def process_OA_area(OA_area, df_economic_activity, df_composition, gender,
             # Select people in the OA area (depending on the sex type and age
             # range)
             df_OAarea_all = df_NO_inactive.loc[
-                (df_NO_inactive['Sex'] == gender)
+                (df_NO_inactive['Sex'] == gender_val)
                 & (df_NO_inactive['Area_OA_x'] == OA_area)
                 & (df_NO_inactive['Age'] >= age_range[0])
                 & (df_NO_inactive['Age'] <= age_range[1])]
@@ -210,56 +208,50 @@ def process_OA_area(OA_area, df_economic_activity, df_composition, gender,
 
 
 def converge(rate, conversor, AreaOA_list, df_economic_activity, df_composition,
-             gender, age_range, df_potential, activity_status,
+             gender_val, age_range, df_potential, activity_status,
              df_NO_inactive=None):
 
     iteration_counter = 0
     total_percentage = 0
-    persons_dict = {}
+    dfs = []
 
     # TODO: Range of +/-1% used here although comments for employed suggest +-2% ?
     while abs(rate - total_percentage) > 1:
         iteration_counter += 1
-        print("Iteration: ", iteration_counter, 'CONVERSOR Value: ', conversor)
-
-        # TODO: where is persons_list used?
-        persons_list = []
-
-        # TODO: Where are these dataframes used to begin?
-        if activity_status == "Employed":
-            df_selected = pd.DataFrame()
-        elif activity_status == "Inactive":
-            df_gender_inactive = pd.DataFrame()
-            df_inactive_students = pd.DataFrame()
-            df_inactive_last = pd.DataFrame()
+        print("Iteration: ", iteration_counter, ' | CONVERSOR Value: ', conversor)
 
         for count, OA_area in enumerate(AreaOA_list, 1):
-            df_all_each_area = process_OA_area(
-                OA_area, df_economic_activity, df_composition, gender,
-                age_range, conversor, df_potential, "Employed", df_NO_inactive)
-
-            dict_key = f"df_{gender}_{age_range[0]}_{age_range[1]}"
-            persons_dict[dict_key] = df_all_each_area
+            length = len(AreaOA_list)
+            print("Processing OA areas: ", round((count / length) * 100, 1),
+                  "%", end="\r")
+            dfs.append(
+                process_OA_area(
+                    OA_area, df_economic_activity, df_composition, gender_val,
+                    age_range, conversor, df_potential, activity_status,
+                    df_NO_inactive
+                )
+            )
 
         # Concatenate all persons in one dataframe
-        df_all = pd.concat(persons_dict.values(), axis=0, ignore_index=True)
+        df = pd.concat(dfs, axis=0, ignore_index=True)
         print(f"Number of people selected {activity_status} by age range and "
-              f"gender: {len(df_all.index)}")
+              f"gender: {len(df.index)}")
 
         # Calculate the TOTAL number of people with the same sex and range of
         # age:
-        # TODO: May need to be genders[gender] here
         # TODO: I think it is correct to place df_composition here - original as
         #  unreferenced variable "df_persons_NE_Household_composition_updated_CORRECT"
-        total = len(df_composition.loc[
-                        (df_composition['Sex'] == gender)
-                        & (df_composition['Age'] >= age_range[0])
-                        & (df_composition['Age'] <= age_range[1])
-                        ])
+        total = len(
+            df_composition.loc[
+                (df_composition['Sex'] == gender_val)
+                & (df_composition['Age'] >= age_range[0])
+                & (df_composition['Age'] <= age_range[1])
+            ]
+        )
         print('Total number of people age range and gender: ', total)
 
         # Calculate the % of people inactive with the same sex and range of age:
-        total_percentage = len(df_selected) / total * 100
+        total_percentage = len(df) / total * 100
 
         # Compare the results against the ones given in table Regional labour
         # market statistics:HI01 Headline indicators for the North East related
@@ -269,7 +261,7 @@ def converge(rate, conversor, AreaOA_list, df_economic_activity, df_composition,
             print('The value is within the tolerance of 1%')
             print('Value obtained: ', total_percentage)
             print('Continuing with the other gender or age range')
-            return df_all
+            return df
 
         # If the difference is greater than a 1% (+/-) then a new iteration
         # should be done updating the parameter that transform the employment
@@ -294,7 +286,7 @@ def process_activity_status(genders, age_range_list, AreaOA_list,
                             df_NO_inactive=None):
 
     if activity_status == "Employed":
-        df_potenital = df_NO_inactive.loc[(df_NO_inactive["NSSEC"] != 8)]
+        df_potential = df_NO_inactive.loc[(df_NO_inactive["NSSEC"] != 8)]
     elif activity_status == "Inactive":
         df_potential = pd.concat([
             df_composition.loc[(df_composition['NSSEC'].isnull())],
@@ -313,7 +305,7 @@ def process_activity_status(genders, age_range_list, AreaOA_list,
             dfs.append(
                 converge(
                     rate, conversor, AreaOA_list, df_economic_activity,
-                    df_composition, gender, age_range, df_potenital,
+                    df_composition, genders[gender], age_range, df_potential,
                     activity_status, df_NO_inactive
                 )
             )
@@ -338,12 +330,12 @@ def analysis(df1, df2, age_range, gender, gender_val, activity_status):
     if activity_status == "Unemployed":
         print((total / (total + total_population)) * 100)
     else:
-         print((total / total_population) * 100)
+        print((total / total_population) * 100)
 
 
 def main(composition_path=os.getenv("composition_path"),
          households_path=os.getenv("households_cleaned_path"),
-         economic_activity_path=os.getenv("households_cleaned_path"),
+         economic_activity_path=os.getenv("economic_activity_path"),
          employed_path=os.getenv("employed_path"),
          inactive_path=os.getenv("inactive_path"),
          unemployed_path=os.getenv("unemployed_path")):
@@ -363,7 +355,6 @@ def main(composition_path=os.getenv("composition_path"),
     # This values come from Regional labour market statistics: HI01 Headline indicators for the North East
     # link: https://www.ons.gov.uk/employmentandlabourmarket/peopleinwork/employmentandemployeetypes/datasets/headlinelabourforcesurveyindicatorsforthenortheasthi01
     age_range_list = [(16, 24), (25, 34), (35, 49), (50, 64), (65, 120)]
-    analysis_age_ranges = age_range_list.append([(16, 120), (16, 64)])
 
     # TODO: Make the following input parameters
     inactive_rates = {
@@ -414,14 +405,15 @@ def main(composition_path=os.getenv("composition_path"),
                                                   keep=False)
 
     # Analysis
+    age_range_list.append([(16, 120), (16, 64)])
     for gender in genders:
-        for age_range in analysis_age_ranges:
+        for age_range in age_range_list:
             analysis(df_inactive, df_composition, age_range, gender,
                      genders[gender], "Inactive")
             analysis(df_employed, df_composition, age_range, gender,
                      genders[gender], "Employed")
             analysis(df_unemployed, df_employed, age_range, gender,
-                     gender[genders], "Unemployed")
+                     genders[gender], "Unemployed")
 
     # Update the "Economic_activity" to each of the dataframes generated before:
     df_employed["Economic_activity"] = "Employed"
