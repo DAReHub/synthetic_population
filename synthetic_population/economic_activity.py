@@ -1,5 +1,6 @@
 import pandas as pd
 import os
+from multiprocessing import Pool, cpu_count
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -207,30 +208,52 @@ def process_OA_area(OA_area, df_economic_activity, df_composition, gender_val,
         return pd.concat([df_employed, df_employed_leftovers])
 
 
+def process_OA_area_wrapper(args):
+    return process_OA_area(*args)
+
+
 def converge(rate, conversor, AreaOA_list, df_economic_activity, df_composition,
              gender_val, age_range, df_potential, activity_status,
              df_NO_inactive=None):
 
     iteration_counter = 0
     total_percentage = 0
+    # TODO: Should dfs be reset here or within while loop?
     dfs = []
 
-    # TODO: Range of +/-1% used here although comments for employed suggest +-2% ?
+    # TODO: Range of +/-1% used here although comments for employed suggest
+    #  +-2% ?
     while abs(rate - total_percentage) > 1:
         iteration_counter += 1
-        print("Iteration: ", iteration_counter, ' | CONVERSOR Value: ', conversor)
+        print("Iteration: ", iteration_counter, ' | CONVERSOR Value: ',
+              conversor)
 
-        for count, OA_area in enumerate(AreaOA_list, 1):
-            length = len(AreaOA_list)
-            print("Processing OA areas: ", round((count / length) * 100, 1),
-                  "%", end="\r")
-            dfs.append(
-                process_OA_area(
-                    OA_area, df_economic_activity, df_composition, gender_val,
-                    age_range, conversor, df_potential, activity_status,
-                    df_NO_inactive
+        if os.getenv("multiprocessing", 'True').lower() in ('true', '1', 't'):
+            print(f"Multiprocessing {len(AreaOA_list)} OA areas...")
+            pool = Pool(processes=cpu_count())
+            args = [(OA_area, df_economic_activity, df_composition, gender_val,
+                     age_range, conversor, df_potential, activity_status,
+                     df_NO_inactive) for OA_area in AreaOA_list]
+
+            for count, df_result in enumerate(pool.map(
+                    process_OA_area_wrapper, args)):
+                dfs.append(df_result)
+
+            pool.close()
+            pool.join()
+
+        else:
+            for count, OA_area in enumerate(AreaOA_list, 1):
+                length = len(AreaOA_list)
+                print("Processing OA areas (single thread): ",
+                      round((count / length) * 100, 1), "%", end="\r")
+                dfs.append(
+                    process_OA_area(
+                        OA_area, df_economic_activity, df_composition,
+                        gender_val, age_range, conversor, df_potential,
+                        activity_status, df_NO_inactive
+                    )
                 )
-            )
 
         # Concatenate all persons in one dataframe
         df = pd.concat(dfs, axis=0, ignore_index=True)
@@ -258,9 +281,9 @@ def converge(rate, conversor, AreaOA_list, df_economic_activity, df_composition,
         # to year 2019. If differences obtained against data given is within 1%,
         # then it is Ok
         if (((rate - 1) <= total_percentage) & ((rate + 1) >= total_percentage)):
-            print('The value is within the tolerance of 1%')
-            print('Value obtained: ', total_percentage)
-            print('Continuing with the other gender or age range')
+            # print('The value is within the tolerance of 1%')
+            # print('Value obtained: ', total_percentage)
+            # print('Continuing with the other gender or age range')
             return df
 
         # If the difference is greater than a 1% (+/-) then a new iteration
@@ -269,14 +292,14 @@ def converge(rate, conversor, AreaOA_list, df_economic_activity, df_composition,
         # increment has to be added. If the difference is positive, then a
         # NEGATIVE increment has to be added.
         else:
-            print('The % needs to be adjusted in another iteration')
-            print('Value obtained: ', total_percentage)
+            # print('The % needs to be adjusted in another iteration')
+            # print('Value obtained: ', total_percentage)
             if (total_percentage - rate - 1) < 0:
                 conversor += 0.025
             else:
                 conversor -= 0.025
 
-            print('NEW CONVERSOR Value is: ', conversor)
+            # print('NEW CONVERSOR Value is: ', conversor)
             continue
 
 
