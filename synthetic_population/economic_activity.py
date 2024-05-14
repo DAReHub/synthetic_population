@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 from multiprocessing import Pool, cpu_count
+import time
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -213,23 +214,37 @@ def process_OA_area_wrapper(args):
 
 
 def converge(rate, conversor, AreaOA_list, df_economic_activity, df_composition,
-             gender_val, age_range, df_potential, activity_status,
+             gender, gender_val, age_range, df_potential, activity_status,
              df_NO_inactive=None):
 
     iteration_counter = 0
     total_percentage = 0
-    # TODO: Should dfs be reset here or within while loop?
-    dfs = []
 
-    # TODO: Range of +/-1% used here although comments for employed suggest
-    #  +-2% ?
+    # Calculate the TOTAL number of people with the same sex and range of
+    # age:
+    total = len(
+        df_composition.loc[
+            (df_composition['Sex'] == gender_val)
+            & (df_composition['Age'] >= age_range[0])
+            & (df_composition['Age'] <= age_range[1])
+        ]
+    )
+
     while abs(rate - total_percentage) > 1:
         iteration_counter += 1
-        print("Iteration: ", iteration_counter, ' | CONVERSOR Value: ',
-              conversor)
+        dfs = []
+
+        if iteration_counter == 1:
+            print(f"Iteration: {iteration_counter} | Conversor: "
+                  f"{round(conversor, 3)} | Rate: {round(rate, 3)}")
+        else:
+            print(f"Iteration: {iteration_counter} | Conversor: "
+                  f"{round(conversor, 3)} | Rate: {round(rate, 3)} | Previous "
+                  f"total percentage: {round(total_percentage, 3)} | Previous "
+                  f"difference result: {round(rate - total_percentage, 3)}")
 
         if os.getenv("multiprocessing", 'True').lower() in ('true', '1', 't'):
-            print(f"Multiprocessing {len(AreaOA_list)} OA areas...")
+            print(f"Multiprocessing {len(AreaOA_list)} OA areas...", end="\r")
             pool = Pool(processes=cpu_count())
             args = [(OA_area, df_economic_activity, df_composition, gender_val,
                      age_range, conversor, df_potential, activity_status,
@@ -257,33 +272,21 @@ def converge(rate, conversor, AreaOA_list, df_economic_activity, df_composition,
 
         # Concatenate all persons in one dataframe
         df = pd.concat(dfs, axis=0, ignore_index=True)
-        print(f"Number of people selected {activity_status} by age range and "
-              f"gender: {len(df.index)}")
-
-        # Calculate the TOTAL number of people with the same sex and range of
-        # age:
-        # TODO: I think it is correct to place df_composition here - original as
-        #  unreferenced variable "df_persons_NE_Household_composition_updated_CORRECT"
-        total = len(
-            df_composition.loc[
-                (df_composition['Sex'] == gender_val)
-                & (df_composition['Age'] >= age_range[0])
-                & (df_composition['Age'] <= age_range[1])
-            ]
-        )
-        print('Total number of people age range and gender: ', total)
+        # print(f"Number of {gender}s, aged {age_range[0]}-{age_range[1]}, "
+        #       f"selected '{activity_status}': {len(df.index)} of {total}")
 
         # Calculate the % of people inactive with the same sex and range of age:
         total_percentage = len(df) / total * 100
+        difference = rate - total_percentage
 
         # Compare the results against the ones given in table Regional labour
         # market statistics:HI01 Headline indicators for the North East related
         # to year 2019. If differences obtained against data given is within 1%,
         # then it is Ok
-        if (((rate - 1) <= total_percentage) & ((rate + 1) >= total_percentage)):
-            # print('The value is within the tolerance of 1%')
-            # print('Value obtained: ', total_percentage)
-            # print('Continuing with the other gender or age range')
+        if abs(difference) < 1:
+            print(f"The total percentage value is within the tolerance of 1%. "
+                  f"Total percentage: {total_percentage} | Rate - total "
+                  f"percentage: {difference}")
             return df
 
         # If the difference is greater than a 1% (+/-) then a new iteration
@@ -292,9 +295,10 @@ def converge(rate, conversor, AreaOA_list, df_economic_activity, df_composition,
         # increment has to be added. If the difference is positive, then a
         # NEGATIVE increment has to be added.
         else:
-            # print('The % needs to be adjusted in another iteration')
-            # print('Value obtained: ', total_percentage)
-            if (total_percentage - rate - 1) < 0:
+            # print(f"The total percentage value needs to be adjusted in another "
+            #       f"iteration. Total percentage: {total_percentage} | Rate - "
+            #       f"total percentage: {difference}")
+            if difference > 1:
                 conversor += 0.025
             else:
                 conversor -= 0.025
@@ -319,8 +323,8 @@ def process_activity_status(genders, age_range_list, AreaOA_list,
 
     for gender in genders:
         for i, age_range in enumerate(age_range_list):
-            print(f"Processing — Activity status: {activity_status}, Gender: "
-                  f"{gender}, Age range: {age_range[0]}-{age_range[1]}")
+            print(f"NOW PROCESSING — Activity status: {activity_status}, "
+                  f"Gender: {gender}, Age range: {age_range[0]}-{age_range[1]}")
 
             rate = rates[gender][i]
             conversor = conversors[gender][i]
@@ -328,7 +332,7 @@ def process_activity_status(genders, age_range_list, AreaOA_list,
             dfs.append(
                 converge(
                     rate, conversor, AreaOA_list, df_economic_activity,
-                    df_composition, genders[gender], age_range, df_potential,
+                    df_composition, gender, genders[gender], age_range, df_potential,
                     activity_status, df_NO_inactive
                 )
             )
@@ -363,6 +367,9 @@ def main(composition_path=os.getenv("composition_path"),
          inactive_path=os.getenv("inactive_path"),
          unemployed_path=os.getenv("unemployed_path")):
 
+    start_time = time.time()
+
+    print("Loading dataframes from csv")
     df_composition = pd.read_csv(composition_path, index_col=None, header=0)
     df_households = pd.read_csv(households_path, index_col=None, header=0)
     df_economic_activity = pd.read_csv(economic_activity_path, index_col=None,
@@ -449,6 +456,9 @@ def main(composition_path=os.getenv("composition_path"),
     df_employed.to_csv(inactive_path, encoding='utf-8', header=True)
     print("Exporting to: ", unemployed_path)
     df_employed.to_csv(unemployed_path, encoding='utf-8', header=True)
+
+    end_time = time.time()
+    print(f"Economic activity finished in {end_time - start_time} seconds")
 
 
 if __name__ == "__main__":
