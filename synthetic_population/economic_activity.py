@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 from multiprocessing import Pool, cpu_count
+import time
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -225,8 +226,9 @@ def converge(rate, conversor, AreaOA_list, df_economic_activity, df_composition,
     #  +-2% ?
     while abs(rate - total_percentage) > 1:
         iteration_counter += 1
-        print("Iteration: ", iteration_counter, ' | CONVERSOR Value: ',
-              conversor)
+        print("Iteration: ", iteration_counter, " | Conversor: ", conversor,
+              " | Rate: ", rate, " | Total percentage: ", total_percentage,
+              " | Rate - Total percentage: ", abs(rate - total_percentage))
 
         if os.getenv("multiprocessing", 'True').lower() in ('true', '1', 't'):
             print(f"Multiprocessing {len(AreaOA_list)} OA areas...")
@@ -280,7 +282,7 @@ def converge(rate, conversor, AreaOA_list, df_economic_activity, df_composition,
         # market statistics:HI01 Headline indicators for the North East related
         # to year 2019. If differences obtained against data given is within 1%,
         # then it is Ok
-        if (((rate - 1) <= total_percentage) & ((rate + 1) >= total_percentage)):
+        if ((rate - 1) <= total_percentage) and ((rate + 1) >= total_percentage):
             # print('The value is within the tolerance of 1%')
             # print('Value obtained: ', total_percentage)
             # print('Continuing with the other gender or age range')
@@ -362,6 +364,8 @@ def main(composition_path=os.getenv("composition_path"),
          employed_path=os.getenv("employed_path"),
          inactive_path=os.getenv("inactive_path"),
          unemployed_path=os.getenv("unemployed_path")):
+
+    start_time = time.time()
 
     df_composition = pd.read_csv(composition_path, index_col=None, header=0)
     df_households = pd.read_csv(households_path, index_col=None, header=0)
@@ -449,6 +453,9 @@ def main(composition_path=os.getenv("composition_path"),
     df_employed.to_csv(inactive_path, encoding='utf-8', header=True)
     print("Exporting to: ", unemployed_path)
     df_employed.to_csv(unemployed_path, encoding='utf-8', header=True)
+
+    end_time = time.time()
+    print(f"Economic activity finished in {end_time - start_time} seconds")
 
 
 if __name__ == "__main__":
