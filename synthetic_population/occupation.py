@@ -9,10 +9,10 @@ import time
 from dotenv import load_dotenv
 
 load_dotenv()
-HOUSEHOLDS_PATH = os.getenv("economic_activity_test_households_path")
-EMPLOYED_PATH = os.getenv("economic_activity_test_employed_path")
-UNEMPLOYED_PATH = os.getenv("economic_activity_test_unemployed_path")
-CENSUS_OCCUPATION_PATH = os.getenv("economic_activity_test_census_occupation_path")
+HOUSEHOLDS_PATH = os.getenv("occupation_test_households_path")
+EMPLOYED_PATH = os.getenv("occupation_test_employed_path")
+UNEMPLOYED_PATH = os.getenv("occupation_test_unemployed_path")
+CENSUS_OCCUPATION_PATH = os.getenv("occupation_test_census_occupation_path")
 OCCUPATION_PATH = os.getenv("")
 
 with open("config.json") as f:
