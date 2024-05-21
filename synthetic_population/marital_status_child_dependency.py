@@ -9,8 +9,13 @@
 
 import pandas as pd
 import os
+import time
 from dotenv import load_dotenv
+
 load_dotenv()
+PERSONS_PATH=os.getenv("marital_status_child_dependency_test_persons_path")
+HOUSEHOLDS_PATH=os.getenv("marital_status_child_dependency_test_households_path")
+COMPOSITION_PATH=os.getenv("marital_status_child_dependency_test_composition_path")
 
 
 def people_per_household(df_persons, df_households):
@@ -135,13 +140,12 @@ def children_dependency(LC4408_C_AHTHUK11_x, Age, Total_Children_in_household):
             Total_Children_in_household > 0)
 
 
-def main(persons_path=os.getenv("persons_cleaned_path"),
-         households_path=os.getenv("households_cleaned_path"),
-         composition_path=os.getenv("df_composition_path")):
+def main():
+    start_time = time.time()
 
-    # Read CSV file containing the MSOA and OA values
-    df_persons = pd.read_csv(persons_path, index_col=None, header=0)
-    df_households = pd.read_csv(households_path, index_col=None, header=0)
+    print("Loading dataframes from csv")
+    df_persons = pd.read_csv(PERSONS_PATH, index_col=None, header=0)
+    df_households = pd.read_csv(HOUSEHOLDS_PATH, index_col=None, header=0)
 
     df_persons["Total_People_in_household"] = 0
     df_persons["Total_Children_in_household"] = 0
@@ -176,8 +180,12 @@ def main(persons_path=os.getenv("persons_cleaned_path"),
         )
     )
 
-    print("Exporting to: ", composition_path)
-    df_composition.to_csv(composition_path, encoding='utf-8', header=True)
+    print("Exporting to: ", COMPOSITION_PATH)
+    df_composition.to_csv(COMPOSITION_PATH, encoding='utf-8', header=True)
+
+    end_time = time.time()
+    print(f"Marital status and child dependency completed in "
+          f"{round(end_time - start_time)} seconds")
 
 
 if __name__ == "__main__":

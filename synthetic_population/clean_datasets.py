@@ -1,9 +1,15 @@
 import glob
 import pandas as pd
 import os
+import time
 from dotenv import load_dotenv
-load_dotenv()
 
+load_dotenv()
+PERSONS_INPUT_DIR = os.getenv("clean_datasets_test_persons_dir")
+HOUSEHOLDS_INPUT_DIR = os.getenv("clean_datasets_test_households_dir")
+MSOA_OA_INPUT_PATH = os.getenv("clean_datasets_test_MSOA_OA_path")
+PERSONS_OUTPUT_PATH = os.getenv("")
+HOUSEHOLDS_OUTPUT_PATH = os.getenv("")
 
 def load_df(path):
     print("loading csv to dataframe: ", path)
@@ -28,15 +34,12 @@ def export_to_csv(df, path):
     df.to_csv(path, encoding='utf-8', header=True)
 
 
-def main(persons_input_dir = os.getenv("persons_input_dir"),
-         households_input_dir = os.getenv("households_input_dir"),
-         MSOA_OA_input_dir = os.getenv("MSOA_OA_input_path"),
-         persons_output_path = os.getenv("persons_cleaned_path"),
-         households_output_path = os.getenv("households_cleaned_path")):
+def main():
+    start_time = time.time()
 
-    df_persons_NE = load_df(persons_input_dir)
-    df_households_NE = load_df(households_input_dir)
-    df_MSOA_OA_2011_NE_list = pd.read_csv(MSOA_OA_input_dir, index_col=None,
+    df_persons_NE = load_df(PERSONS_INPUT_DIR)
+    df_households_NE = load_df(HOUSEHOLDS_INPUT_DIR)
+    df_MSOA_OA_2011_NE_list = pd.read_csv(MSOA_OA_INPUT_PATH, index_col=None,
                                           header=0)
 
     print("No.of.unique person values :", len(pd.unique(df_persons_NE['Area'])))
@@ -110,9 +113,13 @@ def main(persons_input_dir = os.getenv("persons_input_dir"),
     df_households_NE_extended = remove_outliers(df_households_NE)
 
     # Export dataframes into csv files
-    export_to_csv(df_persons_NE, persons_output_path)
+    export_to_csv(df_persons_NE, PERSONS_OUTPUT_PATH)
     # TODO: Should this df be 'df_households_NE' or 'df_households_NE_extended'?
-    export_to_csv(df_households_NE_extended, households_output_path)
+    export_to_csv(df_households_NE_extended, HOUSEHOLDS_OUTPUT_PATH)
+
+    end_time = time.time()
+    print(f"Cleaned datasets - completed in {round(end_time - start_time)} "
+          f"seconds")
 
 
 if __name__ == "__main__":
