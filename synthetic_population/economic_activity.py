@@ -16,10 +16,8 @@ UNEMPLOYED_PATH = os.getenv("unemployed_path")
 with open("config.json") as f:
     config = json.load(f)
 root = "economic_activity"
-# GENDERS = config["genders"]
-# AGE_RANGE_LIST = config[root]["age_ranges"]
-GENDERS = {'male': 1}
-AGE_RANGE_LIST = [[16, 24]]
+GENDERS = config["genders"]
+AGE_RANGE_LIST = config[root]["age_ranges"]
 TOLERANCE = config[root]["tolerance"]
 CONVERSOR_STEP = config[root]["conversor_step"]
 INACTIVE_RATES = config[root]["inactive_rates"]
@@ -343,112 +341,6 @@ def process_OA_area_employed(preprocessing_dict, key, value_2019, df_potential,
     # Concatenate and return the selected dataframes with the selected
     # students
     return pd.concat([df_employed, df_employed_leftovers])
-
-
-# def process_OA_area(OA_area, gender_val, age_range, conversor, activity_status,
-#                     preprocessing_dict):
-
-    # key = f"{activity_status}_{gender_val}_{age_range[0]}-{age_range[1]}_{OA_area}"
-    #
-    # ratio_people_2019_2011 = preprocessing_dict[key]["ratio"]
-    # df_potential = preprocessing_dict[key]["df_potential"]
-    # employment_dict = preprocessing_dict[key]["employment_dict"]
-    # df = preprocessing_dict[key]["df"]
-    #
-    # # New value for 2019 = (Value from 2011 (table LC6107EW)) * (inactive
-    # # conversor value (based on age range and sex)) * (ratio of people 2019 vs
-    # # 2011 (c)). This value is the number of people that will be randomly
-    # # assigned "inactive" based on their OA area, range of age and sex.
-    # value_2019 = int(round(employment_dict[activity_status] * conversor
-    #                        * ratio_people_2019_2011, 0))
-
-    # if activity_status == "Inactive":
-    #     df_students = preprocessing_dict[key]["df_students"]
-    #
-    #     # If there are STUDENTS in the OA area:
-    #     # TODO: Refactored logic - test
-    #     df_inactive_students = sample_dataframe(df_students, value_2019)
-    #
-    #     # Remaining NUMBER of people to be assigned as INACTIVE:
-    #     remaining_inactive_2019 = value_2019 - len(df_inactive_students)
-    #
-    #     # Remaining PEOPLE in the dataframe (df_gender_age0_age1 - (number of
-    #     # students already selected)):
-    #     # Concatenate previous selected students with the "potential inactives" and
-    #     # remove duplicates
-    #     df_potential_inactive_plus_students = pd.concat([df_potential, df_inactive_students])
-    #     df_potential_inactive_remaining = df_potential_inactive_plus_students.drop_duplicates(
-    #         keep=False)
-    #
-    #     # Now, we are ready to select the remaining INACTIVE people:
-    #     # Select randomly the number of people to be inactive based on age and sex:
-    #     # TODO: Refactored logic - test
-    #     num_remaining_inactive = min(remaining_inactive_2019,
-    #                                  len(df_potential_inactive_remaining))
-    #     df_inactive = df_potential_inactive_remaining.sample(
-    #         num_remaining_inactive) if num_remaining_inactive > 0 else pd.DataFrame()
-    #
-    #     # If there are still some people to be assigned as INACTIVE, then their
-    #     # NSSEC can be any value.
-    #     # Remaining NUMBER of people to be assigned as INACTIVE:
-    #     second_remaining_inactive_2019 = (value_2019 - len(df_inactive_students)
-    #                                       - len(df_inactive))
-    #
-    #     # Concatenate all people of the specific sex, range age, OA area with the
-    #     # selected students and the others wich NSSEC value is null or 9
-    #     concat_list = [df, df_inactive_students, df_inactive]
-    #     df_potential_inactive_plus_students_plus_null = pd.concat(concat_list)
-    #
-    #     # Remove duplicates
-    #     df_potential_inactive_remaining_last = df_potential_inactive_plus_students_plus_null.drop_duplicates(
-    #         keep=False)
-    #
-    #     # Select randomly the number of people to be inactive based on age and sex:
-    #     # TODO: Refactored logic - test
-    #     df_inactive_last = sample_dataframe(
-    #         df_potential_inactive_remaining_last, second_remaining_inactive_2019
-    #     )
-    #
-    #     # Concatenate and return all persons "inactive" in one dataframe
-    #     return pd.concat([df_inactive_students, df_inactive, df_inactive_last])
-    #
-    # elif activity_status == "Employed":
-    #     # Select randomly the number of people to be employed based on age and
-    #     # sex:
-    #     # TODO: Refactored logic - test
-    #     # TODO: Is 'df' here not meant to be 'df_potential_employed' like for
-    #     #  taking other dataframe samples? If so put into sample_dataframe
-    #     #  function
-    #     if len(df.index) == 0:
-    #         df_employed = pd.DataFrame()
-    #     else:
-    #         # If df_potential_employed is less than value_2019, all of it is
-    #         # applied as a sample
-    #         num_samples = min(value_2019, len(df_potential))
-    #         df_employed = df_potential.sample(num_samples)
-    #
-    #     # If there are still some people in the OA area to be assigned as
-    #     # "EMPLOYED" but there are no more people in the selected dataframe,
-    #     # then we are going to consider as well those people wich NSSEC = 8
-    #     if value_2019 <= len(df_employed.index):
-    #         df_employed_leftovers = pd.DataFrame()
-    #     else:
-    #         df_OAarea_all = preprocessing_dict[key]["df_OAarea_all"]
-    #
-    #         # Concatenate the selected employed with the whole people >=16 in
-    #         # the OA area (depending on the sex type)
-    #         df_NO_inactive_plus_employed = (
-    #             pd.concat([df_OAarea_all, df_employed]))
-    #         df_NO_inactive_plus_remaining = df_NO_inactive_plus_employed.drop_duplicates(
-    #             subset="PID_AreaMSOA", keep=False)
-    #
-    #         # TODO: Refactored logic - test
-    #         df_employed_leftovers = sample_dataframe(
-    #             df_NO_inactive_plus_remaining, value_2019 - len(df_employed))
-    #
-    #     # Concatenate and return the selected dataframes with the selected
-    #     # students
-    #     return pd.concat([df_employed, df_employed_leftovers])
 
 
 def converge(rate, conversor, AreaOA_list, df_composition, gender_val,
