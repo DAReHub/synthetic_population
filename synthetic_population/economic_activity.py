@@ -1,6 +1,6 @@
 import pandas as pd
 import os
-from multiprocessing import Pool, cpu_count
+from multiprocessing import Pool, Manager
 import time
 import json
 from dotenv import load_dotenv
@@ -15,12 +15,13 @@ UNEMPLOYED_PATH = os.getenv("unemployed_path")
 
 with open("config.json") as f:
     config = json.load(f)
+root = "economic_activity"
 GENDERS = config["genders"]
-AGE_RANGE_LIST = config["age_ranges"]
-INACTIVE_RATES = config["economic_activity"]["inactive_rates"]
-INACTIVE_CONVERSORS = config["economic_activity"]["inactive_conversors"]
-EMPLOYED_RATES = config["economic_activity"]["employed_rates"]
-EMPLOYED_CONVERSORS = config["economic_activity"]["employed_conversors"]
+AGE_RANGE_LIST = config[root]["age_ranges"]
+INACTIVE_RATES = config[root]["inactive_rates"]
+INACTIVE_CONVERSORS = config[root]["inactive_conversors"]
+EMPLOYED_RATES = config[root]["employed_rates"]
+EMPLOYED_CONVERSORS = config[root]["employed_conversors"]
 
 
 def load_config(path=''):
@@ -35,16 +36,14 @@ def sample_dataframe(df, value):
     # If df is less than value, all of the df is applied as a sample
     return df.sample(min(value, df_len))
 
-
-def process_OA_area(OA_area, df_economic_activity, df_composition, gender_val,
-                    age_range, conversor, df_potential, activity_status,
-                    df_NO_inactive=None):
-    # Select the row of the df_economic_activity that is related to the selected
-    # OA area:
+def initial(OA_area, gender, age_range, df_economic_activity, df_composition):
+    # Select the row of the df_economic_activity that is related to the
+    # selected OA area:
     df_economic_activity_area = df_economic_activity.loc[
         (df_economic_activity['geography'] == OA_area)]
 
-    # Select ALL people that live in the selected OA area and are >= 16 years old:
+    # Select ALL people that live in the selected OA area and are >= 16
+    # years old:
     df_people_OA_area = df_composition.loc[
         (df_composition['Area_OA_x'] == OA_area)
         & (df_composition['Age'] >= 16)]
@@ -54,7 +53,7 @@ def process_OA_area(OA_area, df_economic_activity, df_composition, gender_val,
     # number of them will depend on the value of variable "globals()[f"inactive_
     # {gender}_{age_range[0]}_{age_range[1]}_2019"]"
     df = df_people_OA_area.loc[
-        (df_people_OA_area['Sex'] == gender_val)
+        (df_people_OA_area['Sex'] == GENDERS[gender])
         & (df_people_OA_area['Age'] >= age_range[0])
         & (df_people_OA_area['Age'] <= age_range[1])
         ]
@@ -65,7 +64,8 @@ def process_OA_area(OA_area, df_economic_activity, df_composition, gender_val,
 
     # Create a variable per type of economic activity based on sex and range of
     # age
-    filter_cols = str(gender_val) + "_" + str(age_range[0]) + "_" + str(
+    filter_cols = str(GENDERS[gender]) + "_" + str(
+        age_range[0]) + "_" + str(
         age_range[1])
 
     # Identify the number of people based on sex and range of age in the
@@ -95,6 +95,167 @@ def process_OA_area(OA_area, df_economic_activity, df_composition, gender_val,
     else:
         ratio_people_2019_2011 = 1
 
+    return ratio_people_2019_2011, employment_dict, df
+
+def inactive(OA_area, gender, df, age_range, df_potential):
+    # SELECT FIRST STUDENTS
+    df_students = df.loc[(df['LC4605_C_NSSEC_x'] == 9)]
+
+    # Dataframe containing people of the selected OA area, sex, range of age and
+    # nssec null.
+    df_potential_inactive_NSCCnull = df_potential.loc[
+        (df_potential['Area_OA_x'] == OA_area)
+        & (df_potential['Sex'] == GENDERS[gender])
+        & (df_potential['Age'] >= age_range[0])
+        & (df_potential['Age'] <= age_range[1])
+        & (df_potential['NSSEC'].isnull())]
+
+    # Dataframe containing people of the selected OA area, sex, range of age and
+    # nssec 9 (student)
+    df_potential_inactive_NSCC9 = df_potential.loc[
+        (df_potential['Area_OA_x'] == OA_area)
+        & (df_potential['Sex'] == GENDERS[gender])
+        & (df_potential['Age'] >= age_range[0])
+        & (df_potential['Age'] <= age_range[1])
+        & (df_potential['NSSEC'] == 9)]
+
+    # This dataframe contains the people of the selected OA area, sex, range of
+    # age and nssec (null or 9) that will be used to select the remaining
+    # INACTIVE people. But before that, the previous selected students
+    # df_inactive_students MUST be removed.
+    df_potential_inactive = pd.concat([
+        df_potential_inactive_NSCCnull,
+        df_potential_inactive_NSCC9])
+
+    return df_students, df_potential_inactive
+
+def employed(OA_area, gender, age_range, df_potential, df_NO_inactive):
+    # Select those people of the selected sex, age range and OA area that
+    # can be selected:
+    df_potential_employed = df_potential.loc[
+        (df_potential['Sex'] == GENDERS[gender])
+        & (df_potential['Age'] >= age_range[0])
+        & (df_potential['Age'] <= age_range[1])
+        & ((df_potential['Area_OA_x'] == OA_area))]
+
+    df_OAarea_all = df_NO_inactive.loc[
+        (df_NO_inactive['Sex'] == GENDERS[gender])
+        & (df_NO_inactive['Area_OA_x'] == OA_area)
+        & (df_NO_inactive['Age'] >= age_range[0])
+        & (df_NO_inactive['Age'] <= age_range[1])]
+
+    return df_potential_employed, df_OAarea_all
+
+
+def process_item(args):
+    (activity_status, gender, age_range, OA_area, GENDERS, df_economic_activity,
+     df_composition, df_potential, df_NO_inactive) = args
+
+    ratio, employment_dict, df = initial(
+        OA_area, gender, age_range, df_economic_activity, df_composition
+    )
+
+    key = (f"{activity_status}_{GENDERS[gender]}_{age_range[0]}-"
+           f"{age_range[1]}_{OA_area}")
+
+    if activity_status == "Inactive":
+        df_students, df_potential_inactive = inactive(
+            OA_area, gender, df, age_range, df_potential
+        )
+        result = {
+            key: {
+                "ratio": ratio,
+                "df_potential": df_potential_inactive,
+                "df_students": df_students,
+                "employment_dict": employment_dict,
+                "df": df
+            }
+        }
+
+    elif activity_status == "Employed":
+        df_potential_employed, df_OAarea_all = employed(
+            OA_area, gender, age_range, df_potential, df_NO_inactive
+        )
+        result = {
+            key: {
+                "ratio": ratio,
+                "df_potential": df_potential_employed,
+                "df_OAarea_all": df_OAarea_all,
+                "employment_dict": employment_dict,
+                "df": df
+            }
+        }
+
+    return result
+
+
+def OA_area_preprocessing(AreaOA_list, df_economic_activity, df_composition,
+                          activity_status, df_potential, df_NO_inactive):
+
+    preprocessing_dict = {}
+
+    length = len(GENDERS) * len(AGE_RANGE_LIST) * len(AreaOA_list)
+
+    if os.getenv("multiprocessing", 'True').lower() in ('true', '1', 't'):
+        print(f"Preparing {length} OA area scenarios (this may take some time) "
+              f"[multiprocessing=True]", end="\r")
+
+        with Manager() as manager:
+            preprocessing_dict = manager.dict()
+
+            # Generate all combinations of inputs
+            tasks = [(activity_status, gender, age_range, OA_area, GENDERS,
+                      df_economic_activity, df_composition, df_potential,
+                      df_NO_inactive)
+                     for gender in GENDERS
+                     for age_range in AGE_RANGE_LIST
+                     for OA_area in AreaOA_list]
+
+            with Pool() as pool:
+                results = pool.map(process_item, tasks)
+
+            for result in results:
+                preprocessing_dict.update(result)
+
+            # Convert manager.dict() back to a regular dict
+            preprocessing_dict = dict(preprocessing_dict)
+
+    else:
+        count = 0
+        for gender in GENDERS:
+            for age_range in AGE_RANGE_LIST:
+                for OA_area in AreaOA_list:
+                    progress = round((count/length) * 100, 1)
+                    print(
+                        f"Preparing {length} OA area scenarios (this may take "
+                        f"some time) [multiprocessing=False] | {progress} %",
+                        end="\r"
+                    )
+
+                    tasks = [
+                        activity_status, gender, age_range, OA_area, GENDERS,
+                        df_economic_activity, df_composition, df_potential,
+                        df_NO_inactive
+                    ]
+
+                    preprocessing_dict.update(process_item(tasks))
+
+                    count += 1
+                print("")
+
+    return preprocessing_dict
+
+
+def process_OA_area(OA_area, gender_val, age_range, conversor, activity_status,
+                    preprocessing_dict):
+
+    key = f"{activity_status}_{gender_val}_{age_range[0]}-{age_range[1]}_{OA_area}"
+
+    ratio_people_2019_2011 = preprocessing_dict[key]["ratio"]
+    df_potential = preprocessing_dict[key]["df_potential"]
+    employment_dict = preprocessing_dict[key]["employment_dict"]
+    df = preprocessing_dict[key]["df"]
+
     # New value for 2019 = (Value from 2011 (table LC6107EW)) * (inactive
     # conversor value (based on age range and sex)) * (ratio of people 2019 vs
     # 2011 (c)). This value is the number of people that will be randomly
@@ -103,8 +264,7 @@ def process_OA_area(OA_area, df_economic_activity, df_composition, gender_val,
                            * ratio_people_2019_2011, 0))
 
     if activity_status == "Inactive":
-        # SELECT FIRST STUDENTS
-        df_students = df.loc[(df['LC4605_C_NSSEC_x'] == 9)]
+        df_students = preprocessing_dict[key]["df_students"]
 
         # If there are STUDENTS in the OA area:
         # TODO: Refactored logic - test
@@ -113,40 +273,11 @@ def process_OA_area(OA_area, df_economic_activity, df_composition, gender_val,
         # Remaining NUMBER of people to be assigned as INACTIVE:
         remaining_inactive_2019 = value_2019 - len(df_inactive_students)
 
-        # Force remaining people to be INACTIVE where NSSEC value is null or 9, and
-        # remove previously selected students in df_inactive_students.
-
-        # Dataframe containing people of the selected OA area, sex, range of age and
-        # nssec null.
-        df_potential_inactive_NSCCnull = df_potential.loc[
-            (df_potential['Area_OA_x'] == OA_area)
-            & (df_potential['Sex'] == gender_val)
-            & (df_potential['Age'] >= age_range[0])
-            & (df_potential['Age'] <= age_range[1])
-            & (df_potential['NSSEC'].isnull())]
-
-        # Dataframe containing people of the selected OA area, sex, range of age and
-        # nssec 9 (student)
-        df_potential_inactive_NSCC9 = df_potential.loc[
-            (df_potential['Area_OA_x'] == OA_area)
-            & (df_potential['Sex'] == gender_val)
-            & (df_potential['Age'] >= age_range[0])
-            & (df_potential['Age'] <= age_range[1])
-            & (df_potential['NSSEC'] == 9)]
-
-        # This dataframe contains the people of the selected OA area, sex, range of
-        # age and nssec (null or 9) that will be used to select the remaining
-        # INACTIVE people. But before that, the previous selected students
-        # df_inactive_students MUST be removed.
-        df_potential_inactive = pd.concat([
-            df_potential_inactive_NSCCnull, df_potential_inactive_NSCC9])
-
         # Remaining PEOPLE in the dataframe (df_gender_age0_age1 - (number of
         # students already selected)):
         # Concatenate previous selected students with the "potential inactives" and
         # remove duplicates
-        df_potential_inactive_plus_students = pd.concat([
-            df_potential_inactive, df_inactive_students])
+        df_potential_inactive_plus_students = pd.concat([df_potential, df_inactive_students])
         df_potential_inactive_remaining = df_potential_inactive_plus_students.drop_duplicates(
             keep=False)
 
@@ -183,14 +314,6 @@ def process_OA_area(OA_area, df_economic_activity, df_composition, gender_val,
         return pd.concat([df_inactive_students, df_inactive, df_inactive_last])
 
     elif activity_status == "Employed":
-        # Select those people of the selected sex, age range and OA area that
-        # can be selected:
-        df_potential_employed = df_potential.loc[
-            (df_potential['Sex'] == gender_val)
-            & (df_potential['Age'] >= age_range[0])
-            & (df_potential['Age'] <= age_range[1])
-            & ((df_potential['Area_OA_x'] == OA_area))]
-
         # Select randomly the number of people to be employed based on age and
         # sex:
         # TODO: Refactored logic - test
@@ -202,8 +325,8 @@ def process_OA_area(OA_area, df_economic_activity, df_composition, gender_val,
         else:
             # If df_potential_employed is less than value_2019, all of it is
             # applied as a sample
-            num_samples = min(value_2019, len(df_potential_employed))
-            df_employed = df_potential_employed.sample(num_samples)
+            num_samples = min(value_2019, len(df_potential))
+            df_employed = df_potential.sample(num_samples)
 
         # If there are still some people in the OA area to be assigned as
         # "EMPLOYED" but there are no more people in the selected dataframe,
@@ -211,13 +334,7 @@ def process_OA_area(OA_area, df_economic_activity, df_composition, gender_val,
         if value_2019 <= len(df_employed.index):
             df_employed_leftovers = pd.DataFrame()
         else:
-            # Select people in the OA area (depending on the sex type and age
-            # range)
-            df_OAarea_all = df_NO_inactive.loc[
-                (df_NO_inactive['Sex'] == gender_val)
-                & (df_NO_inactive['Area_OA_x'] == OA_area)
-                & (df_NO_inactive['Age'] >= age_range[0])
-                & (df_NO_inactive['Age'] <= age_range[1])]
+            df_OAarea_all = preprocessing_dict[key]["df_OAarea_all"]
 
             # Concatenate the selected employed with the whole people >=16 in
             # the OA area (depending on the sex type)
@@ -235,15 +352,12 @@ def process_OA_area(OA_area, df_economic_activity, df_composition, gender_val,
         return pd.concat([df_employed, df_employed_leftovers])
 
 
-def process_OA_area_wrapper(args):
-    return process_OA_area(*args)
-
-
 def converge(rate, conversor, AreaOA_list, df_economic_activity, df_composition,
-             gender, gender_val, age_range, df_potential, activity_status,
-             df_NO_inactive=None):
+             gender_val, age_range, df_potential, activity_status,
+             preprocessing_dict, df_NO_inactive=None):
     iteration_counter = 0
     total_percentage = 0
+    length = len(AreaOA_list)
 
     # Calculate the TOTAL number of people with the same sex and range of
     # age:
@@ -259,47 +373,25 @@ def converge(rate, conversor, AreaOA_list, df_economic_activity, df_composition,
         iteration_counter += 1
         dfs = []
 
-        if iteration_counter == 1:
-            print(f"Iteration: {iteration_counter} | Conversor: "
-                  f"{round(conversor, 3)} | Target rate: {round(rate, 3)}")
-        else:
+        if iteration_counter > 1:
             print(f"Iteration: {iteration_counter} | Conversor: "
                   f"{round(conversor, 3)} | Target rate: {round(rate, 3)} | "
-                  f"Previous total percentage: {round(total_percentage, 3)} | "
-                  f"Previous difference result: "
+                  f"Current rate: {round(total_percentage, 3)} | Difference: "
                   f"{round(rate - total_percentage, 3)}")
 
-        if os.getenv("multiprocessing", 'True').lower() in ('true', '1', 't'):
-            print(f"Multiprocessing {len(AreaOA_list)} OA areas...", end="\r")
-            pool = Pool(processes=cpu_count())
-            args = [(OA_area, df_economic_activity, df_composition, gender_val,
-                     age_range, conversor, df_potential, activity_status,
-                     df_NO_inactive) for OA_area in AreaOA_list]
-
-            for count, df_result in enumerate(pool.map(
-                    process_OA_area_wrapper, args)):
-                dfs.append(df_result)
-
-            pool.close()
-            pool.join()
-
-        else:
-            for count, OA_area in enumerate(AreaOA_list, 1):
-                length = len(AreaOA_list)
-                print("Processing OA areas (single thread): ",
-                      round((count / length) * 100, 1), "%", end="\r")
-                dfs.append(
-                    process_OA_area(
-                        OA_area, df_economic_activity, df_composition,
-                        gender_val, age_range, conversor, df_potential,
-                        activity_status, df_NO_inactive
-                    )
+        for count, OA_area in enumerate(AreaOA_list, 1):
+            progress = round((count / length) * 100, 1)
+            print(f"Iteration {iteration_counter} | Conversor: "
+                  f"{round(conversor, 3)} | Target rate: {round(rate, 3)} | "
+                  f"{progress} %", end="\r")
+            dfs.append(
+                process_OA_area(
+                    OA_area, gender_val, age_range, conversor, activity_status,
+                    preprocessing_dict
                 )
+            )
 
-        # Concatenate all persons in one dataframe
         df = pd.concat(dfs, axis=0, ignore_index=True)
-        # print(f"Number of {gender}s, aged {age_range[0]}-{age_range[1]}, "
-        #       f"selected '{activity_status}': {len(df.index)} of {total}")
 
         # Calculate the % of people inactive with the same sex and range of age:
         total_percentage = len(df) / total * 100
@@ -321,9 +413,6 @@ def converge(rate, conversor, AreaOA_list, df_economic_activity, df_composition,
         # increment has to be added. If the difference is positive, then a
         # NEGATIVE increment has to be added.
         else:
-            # print(f"The total percentage value needs to be adjusted in another "
-            #       f"iteration. Total percentage: {total_percentage} | Rate - "
-            #       f"total percentage: {difference}")
             # TODO: In some cases the number of iterations is very large (100+),
             #  which takes a very long time. Is there a dynamic way of modifying
             #  the conversor value so that it will likely converge faster? E.g.
@@ -333,24 +422,32 @@ def converge(rate, conversor, AreaOA_list, df_economic_activity, df_composition,
             else:
                 conversor -= 0.025
 
-            # print('NEW CONVERSOR Value is: ', conversor)
             continue
 
 
 def process_activity_status(AreaOA_list, df_economic_activity, df_composition,
                             activity_status, rates, conversors,
                             df_NO_inactive=None):
-    if activity_status == "Employed":
-        df_potential = df_NO_inactive.loc[(df_NO_inactive["NSSEC"] != 8)]
-    elif activity_status == "Inactive":
+
+    if activity_status == "Inactive":
         df_potential = pd.concat([
             df_composition.loc[(df_composition['NSSEC'].isnull())],
             df_composition.loc[(df_composition['NSSEC'] == 9)]])
+        df_NO_inactive = None
+
+    elif activity_status == "Employed":
+        df_potential = df_NO_inactive.loc[(df_NO_inactive["NSSEC"] != 8)]
+
+    preprocessing_dict = OA_area_preprocessing(
+        AreaOA_list, df_economic_activity, df_composition, activity_status,
+        df_potential, df_NO_inactive
+    )
 
     dfs = []
 
     for gender in GENDERS:
         for i, age_range in enumerate(AGE_RANGE_LIST):
+            print("")
             print(f"NOW PROCESSING — Activity status: {activity_status}, "
                   f"Gender: {gender}, Age range: {age_range[0]}-{age_range[1]}")
 
@@ -360,8 +457,8 @@ def process_activity_status(AreaOA_list, df_economic_activity, df_composition,
             dfs.append(
                 converge(
                     rate, conversor, AreaOA_list, df_economic_activity,
-                    df_composition, gender, GENDERS[gender], age_range,
-                    df_potential, activity_status, df_NO_inactive
+                    df_composition, GENDERS[gender], age_range, df_potential,
+                    activity_status, preprocessing_dict, df_NO_inactive
                 )
             )
 
@@ -404,6 +501,7 @@ def main():
     # Create a list with all Households unique ID values
     # TODO: test data Area_OA column is Area_OA_x - should this be the default?
     AreaOA_list = list(set(df_households['Area_OA_x'].tolist()))
+    # AreaOA_list = AreaOA_list[:10]
 
     df_inactive = process_activity_status(
         AreaOA_list, df_economic_activity, df_composition, "Inactive",
