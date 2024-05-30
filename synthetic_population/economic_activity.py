@@ -18,6 +18,8 @@ with open("config.json") as f:
 root = "economic_activity"
 GENDERS = config["genders"]
 AGE_RANGE_LIST = config[root]["age_ranges"]
+TOLERANCE = config[root]["tolerance"]
+CONVERSOR_STEP = config[root]["conversor_step"]
 INACTIVE_RATES = config[root]["inactive_rates"]
 INACTIVE_CONVERSORS = config[root]["inactive_conversors"]
 EMPLOYED_RATES = config[root]["employed_rates"]
@@ -352,9 +354,8 @@ def process_OA_area(OA_area, gender_val, age_range, conversor, activity_status,
         return pd.concat([df_employed, df_employed_leftovers])
 
 
-def converge(rate, conversor, AreaOA_list, df_economic_activity, df_composition,
-             gender_val, age_range, df_potential, activity_status,
-             preprocessing_dict, df_NO_inactive=None):
+def converge(rate, conversor, AreaOA_list, df_composition, gender_val,
+             age_range, activity_status, preprocessing_dict):
     iteration_counter = 0
     total_percentage = 0
     length = len(AreaOA_list)
@@ -369,20 +370,14 @@ def converge(rate, conversor, AreaOA_list, df_economic_activity, df_composition,
             ]
     )
 
-    while abs(rate - total_percentage) > 1:
+    while abs(rate - total_percentage) > TOLERANCE:
         iteration_counter += 1
         dfs = []
 
-        if iteration_counter > 1:
-            print(f"Iteration: {iteration_counter} | Conversor: "
-                  f"{round(conversor, 3)} | Target rate: {round(rate, 3)} | "
-                  f"Current rate: {round(total_percentage, 3)} | Difference: "
-                  f"{round(rate - total_percentage, 3)}")
-
         for count, OA_area in enumerate(AreaOA_list, 1):
             progress = round((count / length) * 100, 1)
-            print(f"Iteration {iteration_counter} | Conversor: "
-                  f"{round(conversor, 3)} | Target rate: {round(rate, 3)} | "
+            print(f"Iteration: {iteration_counter} | Conversor: "
+                  f"{round(conversor, 3)} | Target rate: {round(rate, 3)} % | "
                   f"{progress} %", end="\r")
             dfs.append(
                 process_OA_area(
@@ -390,6 +385,11 @@ def converge(rate, conversor, AreaOA_list, df_economic_activity, df_composition,
                     preprocessing_dict
                 )
             )
+
+        print(f"Iteration: {iteration_counter} | Conversor: "
+              f"{round(conversor, 3)} | Target rate: {round(rate, 3)} % | "
+              f"Current rate: {round(total_percentage, 3)} % | Difference: "
+              f"{round(rate - total_percentage, 3)} %")
 
         df = pd.concat(dfs, axis=0, ignore_index=True)
 
@@ -401,10 +401,9 @@ def converge(rate, conversor, AreaOA_list, df_economic_activity, df_composition,
         # market statistics:HI01 Headline indicators for the North East related
         # to year 2019. If differences obtained against data given is within 1%,
         # then it is Ok
-        if abs(difference) < 1:
-            print(f"The total percentage value is within the tolerance of 1%. "
-                  f"Total percentage: {total_percentage} | Rate - total "
-                  f"percentage: {difference}")
+        if abs(difference) < TOLERANCE:
+            print(f"Rate reached to within {TOLERANCE} % tolerance of target "
+                  f"rate.")
             return df
 
         # If the difference is greater than a 1% (+/-) then a new iteration
@@ -417,10 +416,10 @@ def converge(rate, conversor, AreaOA_list, df_economic_activity, df_composition,
             #  which takes a very long time. Is there a dynamic way of modifying
             #  the conversor value so that it will likely converge faster? E.g.
             #  a bigger change for a bigger percentage difference
-            if difference > 1:
-                conversor += 0.025
+            if difference > TOLERANCE:
+                conversor += CONVERSOR_STEP
             else:
-                conversor -= 0.025
+                conversor -= CONVERSOR_STEP
 
             continue
 
@@ -456,9 +455,9 @@ def process_activity_status(AreaOA_list, df_economic_activity, df_composition,
 
             dfs.append(
                 converge(
-                    rate, conversor, AreaOA_list, df_economic_activity,
-                    df_composition, GENDERS[gender], age_range, df_potential,
-                    activity_status, preprocessing_dict, df_NO_inactive
+                    rate, conversor, AreaOA_list, df_composition,
+                    GENDERS[gender], age_range, activity_status,
+                    preprocessing_dict
                 )
             )
 
