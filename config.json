@@ -13,6 +13,8 @@
     },
     "economic_activity": {
         "age_ranges": [[16, 24], [25, 34], [35, 49], [50, 64], [65, 120]],
+        "tolerance": 1,
+        "conversor_step": 0.025,
         "inactive_rates": {
             "male": [38.3, 10.0, 9.1, 26.8, 90.3],
             "female": [44.5, 23.1, 19.3, 31.6, 94.8]
@@ -45,6 +47,18 @@
         "gender_percentages": {
             "male": [61.97, 43.74, 51.57, 22.18, 92.85, 14.65, 31.60, 95.89, 48.66],
             "female": [38.03, 56.26, 48.43, 77.82, 7.15, 85.35, 68.40, 4.11, 51.34]
+        }
+    },
+    "inactive_categories": {
+        "student_conversor": 1.202,
+        "gender_student_percent": {
+            "male": 0.570,
+            "female": 0.430
+        },
+        "homemaker_conversor": 1.75,
+        "gender_homemaker_percent": {
+            "male": 0.202,
+            "female": 0.798
         }
     }
 }
